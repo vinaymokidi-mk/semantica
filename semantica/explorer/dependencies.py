@@ -11,12 +11,13 @@ import hmac
 import os
 from typing import Optional
 
-from fastapi import Request, HTTPException, Security, status
+from fastapi import Cookie, Request, HTTPException, Security, status
 from fastapi.security.api_key import APIKeyHeader
 
 from .session import GraphSession
 
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+_API_KEY_COOKIE_NAME = "semantica_api_key"
 
 
 def get_expected_api_key() -> Optional[str]:
@@ -43,7 +44,10 @@ def is_valid_api_key(candidate: Optional[str]) -> bool:
     return bool(candidate) and hmac.compare_digest(candidate, expected)
 
 
-def require_auth(api_key: Optional[str] = Security(_api_key_header)) -> None:
+def require_auth(
+    api_key: Optional[str] = Security(_api_key_header),
+    api_key_cookie: Optional[str] = Cookie(default=None, alias=_API_KEY_COOKIE_NAME),
+) -> None:
     """Dependency enforcing the ``X-API-Key`` header on protected routes.
 
     Every Explorer/API router (except health/info/static assets) should be
@@ -65,10 +69,14 @@ def require_auth(api_key: Optional[str] = Security(_api_key_header)) -> None:
                 "SEMANTICA_ALLOW_ANONYMOUS=true."
             ),
         )
-    if not api_key or not hmac.compare_digest(api_key, expected):
+    candidate = api_key or api_key_cookie
+    if not candidate or not hmac.compare_digest(candidate, expected):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or missing API key. Send it as the X-API-Key header.",
+            detail=(
+                "Invalid or missing API key. Send it as the X-API-Key header, "
+                "or visit /?api_key=... once to establish a local session cookie."
+            ),
         )
 
 

@@ -15,7 +15,13 @@ from fastapi.staticfiles import StaticFiles
 
 from .. import __version__
 from ..context.context_graph import ContextGraph
-from .dependencies import anonymous_access_allowed, get_expected_api_key, is_valid_api_key, require_auth
+from .dependencies import (
+    _API_KEY_COOKIE_NAME,
+    anonymous_access_allowed,
+    get_expected_api_key,
+    is_valid_api_key,
+    require_auth,
+)
 from .session import GraphSession
 from .ws import ConnectionManager
 
@@ -129,6 +135,21 @@ def create_app(
 
     app.state.explorer_settings = settings
 
+    @app.middleware("http")
+    async def bootstrap_api_cookie(request: Request, call_next):
+        candidate = request.query_params.get("api_key")
+        response = await call_next(request)
+        if candidate and is_valid_api_key(candidate):
+            response.set_cookie(
+                key=_API_KEY_COOKIE_NAME,
+                value=candidate,
+                httponly=True,
+                samesite="lax",
+                secure=(request.url.scheme == "https"),
+                path="/",
+            )
+        return response
+
     # allow_credentials lets browsers send cookies/auth headers cross-origin.
     # Credentials aren't needed for the X-API-Key auth scheme below, and
     # enabling them when origins are broadened creates cross-site request
@@ -213,7 +234,11 @@ def create_app(
         # Browsers can't set custom headers on a WebSocket handshake, so
         # accept the key via header (non-browser clients) or query param
         # (browser clients), same SEMANTICA_API_KEY the REST routes check.
-        candidate = websocket.headers.get("x-api-key") or websocket.query_params.get("api_key")
+        candidate = (
+            websocket.headers.get("x-api-key")
+            or websocket.query_params.get("api_key")
+            or websocket.cookies.get(_API_KEY_COOKIE_NAME)
+        )
         if not is_valid_api_key(candidate):
             await websocket.close(code=4401)  # unauthorized
             return
@@ -232,11 +257,24 @@ def create_app(
         except WebSocketDisconnect:
             manager.disconnect(websocket)
 
+    def _with_api_cookie(request: Request, response):
+        candidate = request.query_params.get("api_key")
+        if candidate and is_valid_api_key(candidate):
+            response.set_cookie(
+                key=_API_KEY_COOKIE_NAME,
+                value=candidate,
+                httponly=True,
+                samesite="lax",
+                secure=(request.url.scheme == "https"),
+                path="/",
+            )
+        return response
+
     @app.get("/", include_in_schema=False)
-    async def root():
+    async def root(request: Request):
         index_path = Path(__file__).resolve().parent.parent / "static" / "index.html"
         if index_path.is_file():
-            return FileResponse(index_path)
+            return _with_api_cookie(request, FileResponse(index_path))
         _logger.warning(
             "Explorer frontend bundle not found — UI unavailable. "
             "Install the package via pip to get the pre-built bundle, "
@@ -278,12 +316,12 @@ def create_app(
             app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
 
         @app.get("/{full_path:path}", include_in_schema=False)
-        async def serve_spa(full_path: str):
+        async def serve_spa(full_path: str, request: Request):
             if full_path.startswith("api/"):
                 raise HTTPException(status_code=404, detail="API route not found")
             index_path = static_dir / "index.html"
             if index_path.is_file():
-                return FileResponse(index_path)
+                return _with_api_cookie(request, FileResponse(index_path))
             raise HTTPException(status_code=404, detail="Frontend build missing")
 
     return app

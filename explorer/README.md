@@ -63,7 +63,7 @@ semantica-explorer --graph my_graph.json --no-browser
 python -m semantica.explorer --graph my_graph.json
 ```
 
-> **Security note:** Since v0.6.5 the Explorer API requires an API key on protected routes. Set the `SEMANTICA_API_KEY` environment variable and send it as the `X-API-Key` header; without a configured key, protected routes fail closed with `503` rather than serving anonymously. To opt into unauthenticated access for local development only, set `SEMANTICA_ALLOW_ANONYMOUS=true` explicitly. (`/api/health` and `/api/info` are intentionally unauthenticated.)
+> **Security note:** Since v0.6.5 the Explorer API requires an API key on protected routes. Set the `SEMANTICA_API_KEY` environment variable and send it as the `X-API-Key` header; without a configured key, protected routes fail closed with `503` rather than serving anonymously. For the bundled browser UI, you can also open `http://127.0.0.1:8000/?api_key=YOUR_KEY` once to bootstrap local auth for same-origin API and WebSocket requests. To opt into unauthenticated access for local development only, set `SEMANTICA_ALLOW_ANONYMOUS=true` explicitly. (`/api/health` and `/api/info` are intentionally unauthenticated.)
 >
 > The default `--host 127.0.0.1` binds to localhost only, so it is not reachable from other machines on your network. If you bind to `0.0.0.0`, all graph data is readable and writable by any host that can reach the port (subject to API-key auth). The CLI prints a warning when binding to a non-loopback host in anonymous mode or when `SEMANTICA_API_KEY` is unset.
 
